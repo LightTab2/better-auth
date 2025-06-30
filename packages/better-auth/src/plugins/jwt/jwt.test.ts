@@ -6,6 +6,7 @@ import { jwt } from "./index";
 import { importJWK, jwtVerify, type JWK } from "jose";
 
 describe("jwt", async (it) => {
+	// Testing the default behaviour
 	{
 		const { auth, signInWithTestUser } = await getTestInstance({
 			plugins: [jwt()],
