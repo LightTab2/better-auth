@@ -104,18 +104,27 @@ describe("jwt", async (it) => {
 	}
 
 	async function createAuthTest(jwksConfig: any) {
-		return await getTestInstance({
-			plugins: [
-				jwt({
-					jwks: {
-						...jwksConfig,
-					},
-				}),
-			],
-			logger: {
-				level: "error",
-			},
-		});
+		let auth = undefined;
+		let signInWithTestUser = undefined;
+		let error: any | null = null;
+		try {
+			({ auth, signInWithTestUser } = await getTestInstance({
+				plugins: [
+					jwt({
+						jwks: {
+							...jwksConfig,
+						},
+					}),
+				],
+				logger: {
+					level: "error",
+				},
+			}));
+		} catch (err) {
+			error = err;
+		}
+		expect(error).toBeNull();
+		return { auth, signInWithTestUser };
 	}
 
 	function checkKeys(
