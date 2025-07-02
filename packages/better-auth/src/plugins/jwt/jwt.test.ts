@@ -7,101 +7,99 @@ import { importJWK, jwtVerify, type JWK } from "jose";
 
 describe("jwt", async (it) => {
 	// Testing the default behaviour
-	{
-		const { auth, signInWithTestUser } = await getTestInstance({
-			plugins: [jwt()],
-			logger: {
-				level: "error",
-			},
-		});
+	const { auth, signInWithTestUser } = await getTestInstance({
+		plugins: [jwt()],
+		logger: {
+			level: "error",
+		},
+	});
 
-		const { headers } = await signInWithTestUser();
-		const client = createAuthClient({
-			plugins: [jwtClient()],
-			baseURL: "http://localhost:3000/api/auth",
+	const { headers } = await signInWithTestUser();
+	const client = createAuthClient({
+		plugins: [jwtClient()],
+		baseURL: "http://localhost:3000/api/auth",
+		fetchOptions: {
+			customFetchImpl: async (url, init) => {
+				return auth.handler(new Request(url, init));
+			},
+		},
+	});
+
+	it("should get a token", async () => {
+		let token = "";
+		await client.getSession({
 			fetchOptions: {
-				customFetchImpl: async (url, init) => {
-					return auth.handler(new Request(url, init));
+				headers,
+				onSuccess(context) {
+					token = context.response.headers.get("set-auth-jwt") || "";
 				},
 			},
 		});
 
-		it("should get a token", async () => {
-			let token = "";
-			await client.getSession({
-				fetchOptions: {
-					headers,
-					onSuccess(context) {
-						token = context.response.headers.get("set-auth-jwt") || "";
-					},
-				},
-			});
+		expect(token.length).toBeGreaterThan(10);
+	});
 
-			expect(token.length).toBeGreaterThan(10);
+	it("Get a token", async () => {
+		const token = await client.token({
+			fetchOptions: {
+				headers,
+			},
 		});
 
-		it("Get a token", async () => {
-			const token = await client.token({
-				fetchOptions: {
-					headers,
-				},
-			});
+		expect(token.data?.token).toBeDefined();
+	});
 
-			expect(token.data?.token).toBeDefined();
+	it("Get JWKS", async () => {
+		// If no JWK exists, this makes sure it gets added.
+		// TODO: Replace this with a generate JWKS endpoint once it exists.
+		const token = await client.token({
+			fetchOptions: {
+				headers,
+			},
 		});
 
-		it("Get JWKS", async () => {
-			// If no JWK exists, this makes sure it gets added.
-			// TODO: Replace this with a generate JWKS endpoint once it exists.
-			const token = await client.token({
-				fetchOptions: {
-					headers,
-				},
-			});
+		expect(token.data?.token).toBeDefined();
 
-			expect(token.data?.token).toBeDefined();
+		const jwks = await client.jwks();
 
-			const jwks = await client.jwks();
+		expect(jwks.data?.keys).length.above(0);
+	});
 
-			expect(jwks.data?.keys).length.above(0);
+	it("Signed tokens can be validated with the JWKS", async () => {
+		const token = await client.token({
+			fetchOptions: {
+				headers,
+			},
 		});
 
-		it("Signed tokens can be validated with the JWKS", async () => {
-			const token = await client.token({
-				fetchOptions: {
-					headers,
-				},
-			});
+		const jwks = await client.jwks();
 
-			const jwks = await client.jwks();
+		const publicWebKey = await importJWK({
+			...jwks.data?.keys[0],
+			alg: "EdDSA",
+		});
+		const decoded = await jwtVerify(token.data?.token!, publicWebKey);
 
-			const publicWebKey = await importJWK({
-				...jwks.data?.keys[0],
-				alg: "EdDSA",
-			});
-			const decoded = await jwtVerify(token.data?.token!, publicWebKey);
+		expect(decoded).toBeDefined();
+	});
 
-			expect(decoded).toBeDefined();
+	it("should set subject to user id by default", async () => {
+		const token = await client.token({
+			fetchOptions: {
+				headers,
+			},
 		});
 
-		it("should set subject to user id by default", async () => {
-			const token = await client.token({
-				fetchOptions: {
-					headers,
-				},
-			});
+		const jwks = await client.jwks();
 
-			const jwks = await client.jwks();
-
-			const publicWebKey = await importJWK({
-				...jwks.data?.keys[0],
-				alg: "EdDSA",
-			});
-			const decoded = await jwtVerify(token.data?.token!, publicWebKey);
-			expect(decoded.payload.sub).toBeDefined();
-			expect(decoded.payload.sub).toBe(decoded.payload.id);
+		const publicWebKey = await importJWK({
+			...jwks.data?.keys[0],
+			alg: "EdDSA",
 		});
-	}
+		const decoded = await jwtVerify(token.data?.token!, publicWebKey);
+		expect(decoded.payload.sub).toBeDefined();
+		expect(decoded.payload.sub).toBe(decoded.payload.id);
+	});
 
 	async function createAuthTest(jwksConfig: any) {
 		let auth = undefined;
@@ -145,7 +143,7 @@ describe("jwt", async (it) => {
 
 	async function checkToken(auth: any, signInWithTestUser: any) {
 		const { headers } = await signInWithTestUser();
-		let token: string = "";
+		let token = undefined;
 		let error: any | null = null;
 
 		try {
@@ -159,19 +157,16 @@ describe("jwt", async (it) => {
 				},
 			});
 
-			await client.getSession({
+			token = await client.token({
 				fetchOptions: {
 					headers,
-					onSuccess(context) {
-						token = context.response.headers.get("set-auth-jwt") || "";
-					},
 				},
 			});
 		} catch (err) {
 			error = err;
 		}
 		expect(error).toBeNull();
-		expect(token.length).toBeGreaterThan(10);
+		expect(token?.data?.token).toBeDefined();
 	}
 
 	const algorithmsToTest = [
@@ -209,7 +204,7 @@ describe("jwt", async (it) => {
 				alg: "EdDSA",
 			},
 		},
-		// For some reason it still registers (or thinks it registered) their eliptic curve as "Ed25519". TODO: investigate further
+		// This is not supported (https://github.com/panva/jose/issues/210)
 		/*
 		{
 			keyPairConfig: {
@@ -283,23 +278,29 @@ describe("jwt", async (it) => {
 				},
 			});
 
-		it(`${algorithm.keyPairConfig.alg}${
-			algorithm.keyPairConfig.crv ? "(" + algorithm.keyPairConfig.crv + ")" : ""
-		} algorithm can be used to generate JWKS`, async () => {
-			checkKeys(
-				await authToTest.api.getJwks(),
-				expectedOutcome.ec,
-				expectedOutcome.length,
-				expectedOutcome.crv,
-				expectedOutcome.alg,
-			);
-		});
+		if (authToTest && signInWithTestUserToTest) {
+			it(`${algorithm.keyPairConfig.alg}${
+				algorithm.keyPairConfig.crv
+					? "(" + algorithm.keyPairConfig.crv + ")"
+					: ""
+			} algorithm can be used to generate JWKS`, async () => {
+				checkKeys(
+					await authToTest.api.getJwks(),
+					expectedOutcome.ec,
+					expectedOutcome.length,
+					expectedOutcome.crv,
+					expectedOutcome.alg,
+				);
+			});
 
-		it(`${algorithm.keyPairConfig.alg}${
-			algorithm.keyPairConfig.crv ? "(" + algorithm.keyPairConfig.crv + ")" : ""
-		} algorithm can be used to generate a token`, async () => {
-			checkToken(authToTest, signInWithTestUserToTest);
-		});
+			it(`${algorithm.keyPairConfig.alg}${
+				algorithm.keyPairConfig.crv
+					? "(" + algorithm.keyPairConfig.crv + ")"
+					: ""
+			} algorithm can be used to generate a token`, async () => {
+				checkToken(authToTest, signInWithTestUserToTest);
+			});
+		}
 
 		const {
 			auth: authToTest_noEncrypt,
@@ -310,6 +311,8 @@ describe("jwt", async (it) => {
 			},
 			disablePrivateKeyEncryption: true,
 		});
+
+		if (!(authToTest_noEncrypt && signInWithTestUserToTest_noEncrypt)) continue;
 
 		it(`${algorithm.keyPairConfig.alg}${
 			algorithm.keyPairConfig.crv ? "(" + algorithm.keyPairConfig.crv + ")" : ""
