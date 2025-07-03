@@ -104,7 +104,7 @@ describe("jwt", async (it) => {
 	async function createAuthTest(jwksConfig: any) {
 		let auth = undefined;
 		let signInWithTestUser = undefined;
-		let error: any | null = null;
+		let error: boolean = false;
 		try {
 			({ auth, signInWithTestUser } = await getTestInstance({
 				plugins: [
@@ -119,9 +119,9 @@ describe("jwt", async (it) => {
 				},
 			}));
 		} catch (err) {
-			error = err;
+			error = true;
 		}
-		expect(error).toBeNull();
+		expect(error).toBeFalsy();
 		return { auth, signInWithTestUser };
 	}
 
@@ -142,11 +142,13 @@ describe("jwt", async (it) => {
 	}
 
 	async function checkToken(auth: any, signInWithTestUser: any) {
-		const { headers } = await signInWithTestUser();
 		let token = undefined;
-		let error: any | null = null;
+		let error: boolean = false;
 
 		try {
+			const { headers } = await signInWithTestUser();
+			expect(headers).toBeDefined();
+
 			const client = createAuthClient({
 				plugins: [jwtClient()],
 				baseURL: "http://localhost:3000/api/auth",
@@ -163,9 +165,9 @@ describe("jwt", async (it) => {
 				},
 			});
 		} catch (err) {
-			error = err;
+			error = true;
 		}
-		expect(error).toBeNull();
+		expect(error).toBeFalsy();
 		expect(token?.data?.token).toBeDefined();
 	}
 
@@ -278,6 +280,8 @@ describe("jwt", async (it) => {
 				},
 			});
 
+		expect(authToTest).toBeDefined();
+		expect(signInWithTestUserToTest).toBeDefined();
 		if (authToTest && signInWithTestUserToTest) {
 			it(`${algorithm.keyPairConfig.alg}${
 				algorithm.keyPairConfig.crv
@@ -312,6 +316,8 @@ describe("jwt", async (it) => {
 			disablePrivateKeyEncryption: true,
 		});
 
+		expect(authToTest_noEncrypt).toBeDefined();
+		expect(signInWithTestUserToTest_noEncrypt).toBeDefined();
 		if (!(authToTest_noEncrypt && signInWithTestUserToTest_noEncrypt)) continue;
 
 		it(`${algorithm.keyPairConfig.alg}${
